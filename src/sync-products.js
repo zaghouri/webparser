@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import {
@@ -10,13 +10,18 @@ import { getProductUrls } from "./sitemap.js";
 import { createWooClientFromEnv } from "./woocommerce-client.js";
 import {
   mapProductToWooPayload,
-  productSlugFromUrl,
+  parseSlugFromUrl,
+  defaultProductSlug,
+  shortSlugDisambiguator,
   shouldSkipProduct,
 } from "./sync-mappers.js";
 
 const PRODUCTS_PATH = fileURLToPath(new URL("../products.json", import.meta.url));
 const CATEGORIES_PATH = fileURLToPath(
   new URL("../categories.json", import.meta.url)
+);
+const WC_PRODUCT_MAP_PATH = fileURLToPath(
+  new URL("../wc-product-map.json", import.meta.url)
 );
 
 function warnMissingLastmod(url) {
@@ -46,6 +51,84 @@ async function findProductBySlug(client, slug) {
   const rows = await client.get("/products", { slug, per_page: 100 });
   if (!Array.isArray(rows) || rows.length === 0) return null;
   return rows[0];
+}
+
+async function loadProductMap() {
+  if (!existsSync(WC_PRODUCT_MAP_PATH)) return {};
+  try {
+    const raw = await readFile(WC_PRODUCT_MAP_PATH, "utf8");
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    return data;
+  } catch {
+    return {};
+  }
+}
+
+async function saveProductMap(map) {
+  const ordered = Object.fromEntries(
+    Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
+  );
+  await writeFile(WC_PRODUCT_MAP_PATH, JSON.stringify(ordered, null, 2), "utf8");
+}
+
+/**
+ * Stable sync key: source product `url`. Resolves Woo product id from map
+ * or legacy lookup by source URL slug.
+ */
+async function resolveWooProductId(client, product, productMap) {
+  const url = product?.url;
+  if (!url || typeof url !== "string") return 0;
+
+  let id = Number(productMap[url] ?? 0);
+  if (id > 0) {
+    try {
+      const p = await client.get(`/products/${id}`);
+      if (p?.id) return Number(p.id);
+    } catch {
+      delete productMap[url];
+    }
+  }
+
+  const legacySlug = parseSlugFromUrl(url);
+  if (legacySlug) {
+    const existing = await findProductBySlug(client, legacySlug);
+    if (existing?.id) {
+      productMap[url] = Number(existing.id);
+      return Number(existing.id);
+    }
+  }
+  return 0;
+}
+
+function pickUniqueSlug(baseSlug, usedSlugs) {
+  if (!baseSlug) return "";
+  let candidate = baseSlug;
+  let n = 0;
+  while (usedSlugs.has(candidate)) {
+    n++;
+    candidate = `${baseSlug}-${n}`;
+  }
+  usedSlugs.add(candidate);
+  return candidate;
+}
+
+async function createProductPost(client, payload, productUrl) {
+  try {
+    return await client.post("/products", payload);
+  } catch (error) {
+    const status = error?.response?.status;
+    const msg = `${error?.response?.data?.message ?? error?.message ?? ""}`;
+    if (
+      status === 400 &&
+      /slug|already|exists|duplicate|utilis/i.test(msg) &&
+      productUrl
+    ) {
+      const alt = `${payload.slug}-${shortSlugDisambiguator(productUrl)}`;
+      return await client.post("/products", { ...payload, slug: alt });
+    }
+    throw error;
+  }
 }
 
 async function findCategoryIdBySlug(client, slug, categoryIdCache) {
@@ -119,6 +202,7 @@ async function findBrandIdBySlug(client, slug, brandIdCache) {
 
 export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
   const client = createWooClientFromEnv();
+  const productMap = await loadProductMap();
   const allProducts = await loadJsonArray(PRODUCTS_PATH);
   const allCategories = await loadJsonArray(CATEGORIES_PATH);
   const categoryNameToSlug = buildCategoryNameToSlug(allCategories);
@@ -142,6 +226,7 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
   const tagCache = new Map();
   const categoryIdCache = new Map();
   const brandIdCache = new Map();
+  const usedSlugs = new Set();
 
   for (const product of targets) {
     counters.considered++;
@@ -200,35 +285,58 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
           brandIds.push(wcBrandId);
         }
       }
-      const payloadWithBrands = mapProductToWooPayload(product, {
-        categoryIds: [...new Set(categoryIds)],
-        tagIds: [...new Set(tagIds)],
-        brandIds: [...new Set(brandIds)],
-      });
-      if (!payloadWithBrands) {
+      const baseSlug = defaultProductSlug(product);
+      if (!baseSlug) {
         counters.failed++;
         console.error(`[fail] product ${product.url}: could not derive slug`);
         continue;
       }
 
-      const existing = await findProductBySlug(client, payloadWithBrands.slug);
-      if (existing?.id) {
-        await client.put(`/products/${existing.id}`, payloadWithBrands);
+      const wooId = await resolveWooProductId(client, product, productMap);
+      const slug = pickUniqueSlug(baseSlug, usedSlugs);
+
+      const payloadWithBrands = mapProductToWooPayload(product, {
+        categoryIds: [...new Set(categoryIds)],
+        tagIds: [...new Set(tagIds)],
+        brandIds: [...new Set(brandIds)],
+        slug,
+      });
+      if (!payloadWithBrands) {
+        counters.failed++;
+        console.error(`[fail] product ${product.url}: could not build payload`);
+        continue;
+      }
+
+      if (wooId > 0) {
+        await client.put(`/products/${wooId}`, payloadWithBrands);
+        productMap[product.url] = wooId;
         counters.updated++;
       } else {
-        await client.post("/products", payloadWithBrands);
-        counters.created++;
+        const created = await createProductPost(
+          client,
+          payloadWithBrands,
+          product.url
+        );
+        if (created?.id) {
+          productMap[product.url] = Number(created.id);
+          counters.created++;
+        } else {
+          counters.failed++;
+          continue;
+        }
       }
       counters.synced++;
     } catch (error) {
       counters.failed++;
-      const slug = productSlugFromUrl(product.url) ?? product.url;
+      const label = defaultProductSlug(product) || product.url;
       console.error(
-        `[fail] product ${slug}:`,
+        `[fail] product ${label}:`,
         error?.response?.data?.message ?? error?.message ?? error
       );
     }
   }
+
+  await saveProductMap(productMap);
 
   return { counters };
 }

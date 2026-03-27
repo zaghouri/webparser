@@ -11,7 +11,7 @@ function normalizeToken(value) {
   return cleanText(value).toLocaleLowerCase();
 }
 
-function parseSlugFromUrl(url) {
+export function parseSlugFromUrl(url) {
   if (!url || typeof url !== "string") return null;
   try {
     const { pathname } = new URL(url);
@@ -22,6 +22,27 @@ function parseSlugFromUrl(url) {
   } catch {
     return null;
   }
+}
+
+/** Woo-style slug from product title (target may differ from source URL slug). */
+export function slugifyTitle(value) {
+  const text = cleanText(value);
+  if (!text) return "";
+  return text
+    .toLocaleLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function shortSlugDisambiguator(url) {
+  if (!url || typeof url !== "string") return "x";
+  let h = 0;
+  for (let i = 0; i < url.length; i++) {
+    h = (h * 31 + url.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36).slice(0, 8);
 }
 
 function parsePrice(value) {
@@ -84,9 +105,19 @@ export function mapCategoryToWooPayload(category, parentId = 0) {
 
 export function mapProductToWooPayload(
   product,
-  { categoryIds = [], tagIds = [], brandIds = [] } = {}
+  {
+    categoryIds = [],
+    tagIds = [],
+    brandIds = [],
+    slug: slugOverride,
+  } = {}
 ) {
-  const slug = parseSlugFromUrl(product?.url);
+  const fromTitle = slugifyTitle(product?.title);
+  const fromUrl = parseSlugFromUrl(product?.url);
+  const slug =
+    (typeof slugOverride === "string" && slugOverride.trim()) ||
+    fromTitle ||
+    fromUrl;
   if (!slug) {
     return null;
   }
@@ -96,6 +127,7 @@ export function mapProductToWooPayload(
     ? dedupeStrings(product.images).map((src) => ({ src }))
     : [];
 
+  const sourceUrl = cleanText(product?.url);
   const payload = {
     name: cleanText(product?.title) || slug,
     slug,
@@ -112,10 +144,21 @@ export function mapProductToWooPayload(
   if (brandIds.length > 0) {
     payload.brands = brandIds.map((id) => ({ id }));
   }
+  if (sourceUrl) {
+    payload.meta_data = [{ key: "_source_product_url", value: sourceUrl }];
+  }
 
   return payload;
 }
 
 export function productSlugFromUrl(url) {
   return parseSlugFromUrl(url);
+}
+
+export function defaultProductSlug(product) {
+  return (
+    slugifyTitle(product?.title) ||
+    parseSlugFromUrl(product?.url) ||
+    ""
+  );
 }
