@@ -73,36 +73,46 @@ function collectGalleryImages($, pageUrl) {
   return [...seen];
 }
 
+function innerHtml($el) {
+  if (!$el?.length) return "";
+  const h = $el.html();
+  return typeof h === "string" ? h.trim() : "";
+}
+
 /**
  * Short + full description for this theme (Flatsome-style accordion + summary).
  * Short: `.product-short-description`; full: `#accordion-description-content`.
+ * Uses inner HTML so lists, headings, and links sync to WooCommerce; merge
+ * deduplication uses plain text (same as before).
  */
 function extractDescriptions($) {
-  const shortEl = $(".product-short-description").first();
-  let short = shortEl.length ? normalizeWhitespace(shortEl.text()) : "";
-  if (!short) {
-    const fb = $(".woocommerce-product-details__short-description").first();
-    if (fb.length) short = normalizeWhitespace(fb.text());
+  let shortEl = $(".product-short-description").first();
+  if (!shortEl.length) {
+    shortEl = $(".woocommerce-product-details__short-description").first();
   }
 
+  const shortText = shortEl.length ? normalizeWhitespace(shortEl.text()) : "";
+  const shortHtml = innerHtml(shortEl);
+
   const fullEl = $("#accordion-description-content").first();
-  const full = fullEl.length ? normalizeWhitespace(fullEl.text()) : "";
+  const fullText = fullEl.length ? normalizeWhitespace(fullEl.text()) : "";
+  const fullHtml = innerHtml(fullEl);
 
   let description = "";
-  if (full && short) {
-    if (full.includes(short)) description = full;
-    else description = `${short}\n\n${full}`;
-  } else if (full) description = full;
-  else if (short) description = short;
+  if (fullHtml && shortHtml) {
+    if (fullText.includes(shortText)) description = fullHtml;
+    else description = `${shortHtml}<br><br>${fullHtml}`;
+  } else if (fullHtml) description = fullHtml;
+  else if (shortHtml) description = shortHtml;
   else {
     const fallback = $(
       "#tab-description, .woocommerce-Tabs-panel--description, #tab-description .woocommerce-Tabs-panel"
     ).first();
-    if (fallback.length) description = normalizeWhitespace(fallback.text());
+    if (fallback.length) description = innerHtml(fallback);
   }
 
   return {
-    shortDescription: short ? short : null,
+    shortDescription: shortHtml ? shortHtml : null,
     description,
   };
 }
