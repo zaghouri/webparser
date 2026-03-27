@@ -1,0 +1,8 @@
+node_modules/
+.env
+products.json
+sitemap-state.json
+categories.json
+category-sitemap-state.json
+wc-category-map.json
+wc-brand-map.json

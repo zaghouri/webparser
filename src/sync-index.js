@@ -1,0 +1,32 @@
+import { syncCategories } from "./sync-categories.js";
+import { syncBrands } from "./sync-brands.js";
+import { syncProducts } from "./sync-products.js";
+
+function printCounters(label, counters) {
+  console.log(
+    `${label}: considered=${counters.considered}, synced=${counters.synced}, created=${counters.created}, updated=${counters.updated}, skipped_by_filter=${counters.skipped_by_filter}, failed=${counters.failed}`
+  );
+}
+
+export async function main() {
+  console.log("Starting WooCommerce sync.");
+
+  const categoryResult = await syncCategories();
+  printCounters("Categories", categoryResult.counters);
+
+  const brandResult = await syncBrands();
+  printCounters("Brands", brandResult.counters);
+
+  const productResult = await syncProducts({
+    categoryMap: categoryResult.categoryMap,
+    brandMap: brandResult.brandMap,
+  });
+  printCounters("Products", productResult.counters);
+
+  console.log("WooCommerce sync complete.");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

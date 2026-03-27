@@ -1,0 +1,21 @@
+{
+  "name": "webparser",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:categories": "node src/categories-index.js",
+    "sync:wc": "node src/sync-index.js",
+    "pipeline:wc": "node src/categories-index.js && node src/index.js && node src/sync-index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "WooCommerce HTML scraper and sync pipeline",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "cheerio": "^1.2.0",
+    "p-limit": "^7.3.0"
+  }
+}
