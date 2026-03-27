@@ -24,6 +24,9 @@ const WC_PRODUCT_MAP_PATH = fileURLToPath(
   new URL("../wc-product-map.json", import.meta.url)
 );
 
+/** When true, products already in Woo (`wc-product-map.json` or slug match) are skipped (no PUT). */
+const SKIP_EXISTING_PRODUCTS = true;
+
 function warnMissingLastmod(url) {
   console.warn(`[warn] Missing product <lastmod> for ${url}, syncing anyway.`);
 }
@@ -221,6 +224,7 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
     created: 0,
     updated: 0,
     skipped_by_filter: 0,
+    skipped_existing: 0,
     failed: 0,
   };
   const tagCache = new Map();
@@ -237,6 +241,12 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
     }
 
     try {
+      const wooId = await resolveWooProductId(client, product, productMap);
+      if (SKIP_EXISTING_PRODUCTS && wooId > 0) {
+        counters.skipped_existing++;
+        continue;
+      }
+
       const tagIds = [];
       const productTags = Array.isArray(product?.tags) ? product.tags : [];
       for (const tagNameRaw of productTags) {
@@ -292,7 +302,6 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
         continue;
       }
 
-      const wooId = await resolveWooProductId(client, product, productMap);
       const slug = pickUniqueSlug(baseSlug, usedSlugs);
 
       const payloadWithBrands = mapProductToWooPayload(product, {

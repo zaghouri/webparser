@@ -3,8 +3,12 @@ import { syncBrands } from "./sync-brands.js";
 import { syncProducts } from "./sync-products.js";
 
 function printCounters(label, counters) {
+  const skipExisting =
+    counters.skipped_existing != null
+      ? `, skipped_existing=${counters.skipped_existing}`
+      : "";
   console.log(
-    `${label}: considered=${counters.considered}, synced=${counters.synced}, created=${counters.created}, updated=${counters.updated}, skipped_by_filter=${counters.skipped_by_filter}, failed=${counters.failed}`
+    `${label}: considered=${counters.considered}, synced=${counters.synced}, created=${counters.created}, updated=${counters.updated}, skipped_by_filter=${counters.skipped_by_filter}${skipExisting}, failed=${counters.failed}`
   );
 }
 
