@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { syncCategories } from "./sync-categories.js";
 import { syncBrands } from "./sync-brands.js";
 import { syncProducts } from "./sync-products.js";

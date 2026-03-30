@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { main as scrapeMain } from "./index.js";
 import { main as syncMain } from "./sync-index.js";
 
