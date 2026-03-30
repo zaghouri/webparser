@@ -65,6 +65,12 @@ export function selectUrlsToScrape(rows, state, fullScrape, warnMissingLastmod) 
     const prev = state[url];
 
     if (!lastmod) {
+      // If sitemap doesn't provide lastmod, we can only treat it as "changed".
+      // But we also don't want to scrape it forever; scrape once and record sentinel.
+      if (prev === MISSING_LASTMOD_SENTINEL) {
+        skippedCount++;
+        continue;
+      }
       warnMissingLastmod(url);
       queue.push({ url, lastmod: null, reason: "missing_lastmod" });
       if (prev === undefined) newCount++;

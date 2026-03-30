@@ -58,6 +58,21 @@ function applyMaxProducts(rows) {
   return sliced;
 }
 
+function applyMaxPerRun(queue) {
+  const raw = process.env.MAX_PER_RUN;
+  if (raw === undefined || raw === "") return queue;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) {
+    console.warn(`[warn] Invalid MAX_PER_RUN="${raw}", ignoring.`);
+    return queue;
+  }
+  const sliced = queue.slice(0, n);
+  console.log(
+    `[limit] MAX_PER_RUN=${n} — processing ${sliced.length} of ${queue.length} queued product URLs.`
+  );
+  return sliced;
+}
+
 async function loadProducts() {
   if (!existsSync(PRODUCTS_PATH)) return [];
   try {
@@ -110,15 +125,17 @@ export async function main() {
     `Sitemap: total URLs=${stats.total}, new=${stats.new}, updated=${stats.updated}, skipped=${stats.skipped}`
   );
 
+  const limitedQueue = applyMaxPerRun(queue);
+
   const existing = await loadProducts();
   const scrapedByUrl = new Map();
   let failed = 0;
 
   const limit = pLimit(CONCURRENCY);
-  const tasks = queue.map((item, index) =>
+  const tasks = limitedQueue.map((item, index) =>
     limit(async () => {
       const n = index + 1;
-      const total = queue.length;
+      const total = limitedQueue.length;
       console.log(`[${n}/${total}] ${item.url}`);
       try {
         const product = await scrapeProduct(item.url);
@@ -143,14 +160,27 @@ export async function main() {
     "utf8"
   );
 
-  const nextState = buildStateFromSitemap(rows);
+  // Incremental batch runs must only advance state for URLs we actually processed successfully.
+  // Otherwise we'd "ack" URLs we haven't scraped yet and they'd never be picked up later.
+  let nextState;
+  if (fullScrape) {
+    nextState = buildStateFromSitemap(rows);
+  } else {
+    nextState = { ...state };
+    const rowByUrl = new Map(rows.map((r) => [r.url, r]));
+    for (const url of scrapedByUrl.keys()) {
+      const row = rowByUrl.get(url);
+      if (!row) continue;
+      nextState[url] = row.lastmod ?? "__missing__";
+    }
+  }
   await saveState(nextState, STATE_PATH);
 
   const tEnd = performance.now();
   const discoveryMs = tAfterDiscovery - t0;
   const scrapeMs = tAfterScrape - tAfterDiscovery;
   const totalMs = tEnd - t0;
-  const queuedCount = queue.length;
+  const queuedCount = limitedQueue.length;
 
   console.log(
     `Done. Wrote ${merged.length} products to products.json, state updated (${Object.keys(nextState).length} URLs). Failed scrapes: ${failed}.`

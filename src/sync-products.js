@@ -28,6 +28,14 @@ const WC_PRODUCT_MAP_PATH = fileURLToPath(
 /** When true, products already in Woo (`wc-product-map.json` or slug match) are skipped (no PUT). */
 const SKIP_EXISTING_PRODUCTS = true;
 
+function applyMaxPerRun(items) {
+  const raw = process.env.MAX_PER_RUN;
+  if (raw === undefined || raw === "") return items;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return items;
+  return items.slice(0, n);
+}
+
 function warnMissingLastmod(url) {
   console.warn(`[warn] Missing product <lastmod> for ${url}, syncing anyway.`);
 }
@@ -216,8 +224,14 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
   const limitedRows = applyMaxProducts(allRows);
   const state = await loadState(PRODUCT_STATE_PATH);
   const fullSync = process.env.FULL_SYNC === "true";
-  const { queue } = selectUrlsToScrape(limitedRows, state, fullSync, warnMissingLastmod);
-  const queueSet = new Set(queue.map((item) => item.url));
+  const { queue } = selectUrlsToScrape(
+    limitedRows,
+    state,
+    fullSync,
+    warnMissingLastmod
+  );
+  const limitedQueue = applyMaxPerRun(queue);
+  const queueSet = new Set(limitedQueue.map((item) => item.url));
 
   const targets = allProducts.filter((product) => queueSet.has(product.url));
   const counters = {
