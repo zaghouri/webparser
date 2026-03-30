@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { load } from "cheerio";
 import { createWooClientFromEnv } from "./woocommerce-client.js";
 import { fetchHtml } from "./fetch.js";
+import { formatBrandName } from "./brand-format.js";
 
 const PRODUCTS_PATH = fileURLToPath(new URL("../products.json", import.meta.url));
 const WC_BRAND_MAP_PATH = fileURLToPath(
@@ -140,7 +141,7 @@ async function upsertBrand(client, brand, counters) {
 function buildUniqueBrands(products) {
   const bySlug = new Map();
   for (const product of products) {
-    const name = cleanText(product?.brand);
+    const name = formatBrandName(product?.brand);
     if (!name) continue;
     const slug = slugify(name);
     if (!slug) continue;

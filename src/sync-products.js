@@ -15,6 +15,7 @@ import {
   shortSlugDisambiguator,
   shouldSkipProduct,
 } from "./sync-mappers.js";
+import { formatBrandName } from "./brand-format.js";
 
 const PRODUCTS_PATH = fileURLToPath(new URL("../products.json", import.meta.url));
 const CATEGORIES_PATH = fileURLToPath(
@@ -180,7 +181,8 @@ function buildCategoryNameToSlug(categories) {
 }
 
 function brandSlugFromName(name) {
-  return `${name ?? ""}`
+  const formatted = formatBrandName(typeof name === "string" ? name : `${name ?? ""}`);
+  return `${formatted}`
     .trim()
     .toLocaleLowerCase()
     .normalize("NFD")

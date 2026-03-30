@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 import { fetchHtml } from "./fetch.js";
 import { SOURCE_BASE_URL } from "./config.js";
+import { formatBrandName, normalizeCatalogProductTitle } from "./brand-format.js";
 
 function normalizeWhitespace(str) {
   if (!str || typeof str !== "string") return "";
@@ -124,7 +125,8 @@ export async function scrapeProduct(url) {
   const html = await fetchHtml(url);
   const $ = load(html);
 
-  const title = trimText($("h1.product_title").first().text());
+  const rawTitle = trimText($("h1.product_title").first().text());
+  const { title, brandFromTitle } = normalizeCatalogProductTitle(rawTitle);
   const price = trimText($(".price").first().text());
   const stockEl = $(".stock").first();
   const stock = stockEl.length ? trimText(stockEl.text()) : "";
@@ -145,13 +147,14 @@ export async function scrapeProduct(url) {
 
   const images = collectGalleryImages($, url);
   const brand = extractBrand($);
+  const brandName = brand.name ? formatBrandName(brand.name) : brandFromTitle;
 
   return {
     url,
     title,
     price,
     stock: stock || null,
-    brand: brand.name,
+    brand: brandName || null,
     brandUrl: brand.url,
     categories,
     tags,

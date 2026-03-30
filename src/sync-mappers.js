@@ -1,3 +1,5 @@
+import { normalizeCatalogProductTitle } from "./brand-format.js";
+
 function cleanText(value) {
   if (typeof value !== "string") return "";
   return value.trim();
@@ -112,7 +114,10 @@ export function mapProductToWooPayload(
     slug: slugOverride,
   } = {}
 ) {
-  const fromTitle = slugifyTitle(product?.title);
+  const rawTitle = cleanText(product?.title);
+  const { title: normalizedTitle } = normalizeCatalogProductTitle(rawTitle);
+  const titleForWoo = normalizedTitle || rawTitle;
+  const fromTitle = slugifyTitle(titleForWoo);
   const fromUrl = parseSlugFromUrl(product?.url);
   const slug =
     (typeof slugOverride === "string" && slugOverride.trim()) ||
@@ -129,7 +134,7 @@ export function mapProductToWooPayload(
 
   const sourceUrl = cleanText(product?.url);
   const payload = {
-    name: cleanText(product?.title) || slug,
+    name: titleForWoo || slug,
     slug,
     description: replaceStoreDomain(cleanText(product?.description)),
     short_description: replaceStoreDomain(cleanText(product?.shortDescription)),
@@ -156,8 +161,11 @@ export function productSlugFromUrl(url) {
 }
 
 export function defaultProductSlug(product) {
+  const rawTitle = cleanText(product?.title);
+  const { title: normalizedTitle } = normalizeCatalogProductTitle(rawTitle);
+  const titleForSlug = normalizedTitle || rawTitle;
   return (
-    slugifyTitle(product?.title) ||
+    slugifyTitle(titleForSlug) ||
     parseSlugFromUrl(product?.url) ||
     ""
   );
