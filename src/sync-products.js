@@ -36,6 +36,15 @@ function applyMaxPerRun(items) {
   return items.slice(0, n);
 }
 
+/** Max products to create/update per run when PRODUCT_SYNC_BACKFILL=true (default 15 if unset). */
+function getBackfillPerRunLimit() {
+  const raw = process.env.MAX_PER_RUN;
+  if (raw === undefined || raw === "") return 15;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return 15;
+  return n;
+}
+
 function warnMissingLastmod(url) {
   console.warn(`[warn] Missing product <lastmod> for ${url}, syncing anyway.`);
 }
@@ -111,6 +120,33 @@ async function resolveWooProductId(client, product, productMap) {
     }
   }
   return 0;
+}
+
+/**
+ * Next N products from products.json that are not already in Woo (map + slug lookup).
+ * Stable URL order; does not use sitemap queue.
+ */
+async function buildBackfillTargets(client, allProducts, productMap, maxRun) {
+  const sorted = [...allProducts]
+    .filter((p) => p && typeof p.url === "string" && p.url.trim())
+    .sort((a, b) => a.url.localeCompare(b.url));
+  const targets = [];
+  for (const product of sorted) {
+    const skipResult = shouldSkipProduct(product);
+    if (skipResult.skip) continue;
+
+    if (Number(productMap[product.url] ?? 0) > 0) {
+      continue;
+    }
+
+    const wooId = await resolveWooProductId(client, product, productMap);
+    if (SKIP_EXISTING_PRODUCTS && wooId > 0) {
+      continue;
+    }
+    targets.push(product);
+    if (targets.length >= maxRun) break;
+  }
+  return targets;
 }
 
 function pickUniqueSlug(baseSlug, usedSlugs) {
@@ -239,20 +275,36 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
   const allCategories = await loadJsonArray(CATEGORIES_PATH);
   const categoryNameToSlug = buildCategoryNameToSlug(allCategories);
 
-  const allRows = await getProductUrlsForRun();
-  const limitedRows = applyMaxProducts(allRows);
-  const state = await loadState(PRODUCT_STATE_PATH);
-  const fullSync = process.env.FULL_SYNC === "true";
-  const { queue } = selectUrlsToScrape(
-    limitedRows,
-    state,
-    fullSync,
-    warnMissingLastmod
-  );
-  const limitedQueue = applyMaxPerRun(queue);
-  const queueSet = new Set(limitedQueue.map((item) => item.url));
+  const backfill = process.env.PRODUCT_SYNC_BACKFILL === "true";
 
-  const targets = allProducts.filter((product) => queueSet.has(product.url));
+  let targets;
+  if (backfill) {
+    const maxRun = getBackfillPerRunLimit();
+    console.log(
+      `[sync] PRODUCT_SYNC_BACKFILL: up to ${maxRun} products per run (skip if already in Woo; URL order).`
+    );
+    targets = await buildBackfillTargets(client, allProducts, productMap, maxRun);
+    if (targets.length === 0) {
+      console.log(
+        "[sync] Backfill: nothing to sync (empty catalog, filtered out, or all products already in Woo)."
+      );
+    }
+  } else {
+    const allRows = await getProductUrlsForRun();
+    const limitedRows = applyMaxProducts(allRows);
+    const state = await loadState(PRODUCT_STATE_PATH);
+    const fullSync = process.env.FULL_SYNC === "true";
+    const { queue } = selectUrlsToScrape(
+      limitedRows,
+      state,
+      fullSync,
+      warnMissingLastmod
+    );
+    const limitedQueue = applyMaxPerRun(queue);
+    const queueSet = new Set(limitedQueue.map((item) => item.url));
+
+    targets = allProducts.filter((product) => queueSet.has(product.url));
+  }
   const counters = {
     considered: 0,
     synced: 0,

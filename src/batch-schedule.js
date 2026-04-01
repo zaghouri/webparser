@@ -94,6 +94,13 @@ export async function applyBatchScheduleEnv() {
     `[schedule] ${isFullDay ? "FULL (UTC day first run or forced): live sitemaps + category + brand sync" : "INCREMENTAL: cached sitemaps, products only"} (day=${today}, lastFull=${lastFull ?? "never"})`
   );
 
+  if (
+    process.env.PRODUCT_SYNC_BACKFILL === undefined ||
+    process.env.PRODUCT_SYNC_BACKFILL === ""
+  ) {
+    process.env.PRODUCT_SYNC_BACKFILL = "true";
+  }
+
   return { isFullDay, today };
 }
 
