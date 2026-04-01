@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { isMain } from "./is-main.js";
 import { readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -222,7 +223,9 @@ export async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (isMain(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

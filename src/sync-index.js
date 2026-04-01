@@ -2,6 +2,7 @@ import "dotenv/config";
 import { syncCategories } from "./sync-categories.js";
 import { syncBrands } from "./sync-brands.js";
 import { syncProducts } from "./sync-products.js";
+import { isMain } from "./is-main.js";
 
 function printCounters(label, counters) {
   const skipExisting =
@@ -31,7 +32,9 @@ export async function main() {
   console.log("WooCommerce sync complete.");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (isMain(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
