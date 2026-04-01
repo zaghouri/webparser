@@ -8,3 +8,6 @@ wc-category-map.json
 wc-brand-map.json
 wc-product-map.json
 .run-batch.lock
+batch-schedule-state.json
+product-sitemap-cache.json
+category-sitemap-cache.json

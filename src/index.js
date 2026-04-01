@@ -4,7 +4,7 @@ import { readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import pLimit from "p-limit";
-import { getProductUrls } from "./sitemap.js";
+import { getProductUrlsForRun } from "./sitemap.js";
 import {
   loadState,
   saveState,
@@ -109,7 +109,7 @@ export async function main() {
   const fullScrape = process.env.FULL_SCRAPE === "true";
   console.log(`Starting scrape (FULL_SCRAPE=${fullScrape})`);
 
-  const allRows = await getProductUrls();
+  const allRows = await getProductUrlsForRun();
   const fullCatalogCount = allRows.length;
   const tAfterDiscovery = performance.now();
 

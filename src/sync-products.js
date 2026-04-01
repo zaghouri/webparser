@@ -6,7 +6,7 @@ import {
   selectUrlsToScrape,
   STATE_PATH as PRODUCT_STATE_PATH,
 } from "./state.js";
-import { getProductUrls } from "./sitemap.js";
+import { getProductUrlsForRun } from "./sitemap.js";
 import { createWooClientFromEnv } from "./woocommerce-client.js";
 import {
   mapProductToWooPayload,
@@ -239,7 +239,7 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
   const allCategories = await loadJsonArray(CATEGORIES_PATH);
   const categoryNameToSlug = buildCategoryNameToSlug(allCategories);
 
-  const allRows = await getProductUrls();
+  const allRows = await getProductUrlsForRun();
   const limitedRows = applyMaxProducts(allRows);
   const state = await loadState(PRODUCT_STATE_PATH);
   const fullSync = process.env.FULL_SYNC === "true";

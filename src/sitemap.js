@@ -1,6 +1,16 @@
+import { readFile, writeFile } from "fs/promises";
+import { existsSync } from "fs";
+import { fileURLToPath } from "url";
 import { load as loadXml } from "cheerio";
 import { fetchXML } from "./fetch.js";
 import { SOURCE_SITEMAP_INDEX_URL } from "./config.js";
+
+const PRODUCT_SITEMAP_CACHE_PATH = fileURLToPath(
+  new URL("../product-sitemap-cache.json", import.meta.url)
+);
+const CATEGORY_SITEMAP_CACHE_PATH = fileURLToPath(
+  new URL("../category-sitemap-cache.json", import.meta.url)
+);
 
 const SITEMAP_INDEX_URL = SOURCE_SITEMAP_INDEX_URL;
 
@@ -184,6 +194,73 @@ export async function getCategoryUrls(indexUrl = SITEMAP_INDEX_URL) {
   }
   const filtered = filterCategoryPageUrls(all);
   return mergeByUrl(filtered);
+}
+
+async function readUrlRowsCache(cachePath) {
+  if (!existsSync(cachePath)) return null;
+  try {
+    const raw = await readFile(cachePath, "utf8");
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Product URLs for scrape/sync: live fetch, or cached rows when USE_CACHED_PRODUCT_SITEMAP=true.
+ * When WRITE_PRODUCT_SITEMAP_CACHE=true, persists cache after a live fetch (daily full run).
+ */
+export async function getProductUrlsForRun(indexUrl = SITEMAP_INDEX_URL) {
+  if (process.env.USE_CACHED_PRODUCT_SITEMAP === "true") {
+    const cached = await readUrlRowsCache(PRODUCT_SITEMAP_CACHE_PATH, "product");
+    if (cached) {
+      console.log(
+        `[schedule] Using cached product sitemap (${cached.length} URLs).`
+      );
+      return cached;
+    }
+    console.warn(
+      "[warn] Product sitemap cache missing; fetching live sitemap."
+    );
+  }
+  const rows = await getProductUrls(indexUrl);
+  if (process.env.WRITE_PRODUCT_SITEMAP_CACHE === "true") {
+    await writeFile(
+      PRODUCT_SITEMAP_CACHE_PATH,
+      JSON.stringify(rows, null, 2),
+      "utf8"
+    );
+  }
+  return rows;
+}
+
+/**
+ * Category URLs for sync-categories: live fetch or cache when USE_CACHED_CATEGORY_SITEMAP=true.
+ */
+export async function getCategoryUrlsForRun(indexUrl = SITEMAP_INDEX_URL) {
+  if (process.env.USE_CACHED_CATEGORY_SITEMAP === "true") {
+    const cached = await readUrlRowsCache(CATEGORY_SITEMAP_CACHE_PATH, "category");
+    if (cached) {
+      console.log(
+        `[schedule] Using cached category sitemap (${cached.length} URLs).`
+      );
+      return cached;
+    }
+    console.warn(
+      "[warn] Category sitemap cache missing; fetching live sitemap."
+    );
+  }
+  const rows = await getCategoryUrls(indexUrl);
+  if (process.env.WRITE_CATEGORY_SITEMAP_CACHE === "true") {
+    await writeFile(
+      CATEGORY_SITEMAP_CACHE_PATH,
+      JSON.stringify(rows, null, 2),
+      "utf8"
+    );
+  }
+  return rows;
 }
 
 export { SITEMAP_INDEX_URL };

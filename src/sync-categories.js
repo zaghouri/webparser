@@ -2,7 +2,7 @@ import { readFile, writeFile } from "fs/promises";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { loadState, selectUrlsToScrape } from "./state.js";
-import { getCategoryUrls } from "./sitemap.js";
+import { getCategoryUrlsForRun } from "./sitemap.js";
 import { createWooClientFromEnv } from "./woocommerce-client.js";
 import { mapCategoryToWooPayload } from "./sync-mappers.js";
 
@@ -160,7 +160,7 @@ export async function syncCategories() {
   const client = createWooClientFromEnv();
   const categories = await loadCategories();
 
-  const allRows = await getCategoryUrls();
+  const allRows = await getCategoryUrlsForRun();
   const limitedRows = applyMaxCategories(allRows);
   const state = await loadState(CATEGORY_STATE_PATH);
   const fullSync = process.env.FULL_SYNC === "true";

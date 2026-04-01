@@ -2,6 +2,10 @@ import "dotenv/config";
 import { existsSync } from "fs";
 import { readFile, unlink, writeFile } from "fs/promises";
 import { fileURLToPath } from "url";
+import {
+  applyBatchScheduleEnv,
+  markFullRunCompletedIfApplicable,
+} from "./batch-schedule.js";
 import { main as scrapeMain } from "./index.js";
 import { main as syncMain } from "./sync-index.js";
 
@@ -41,23 +45,28 @@ async function releaseLock() {
 }
 
 /**
- * Run one incremental batch: scrape then sync.
+ * Scrape then WooCommerce sync.
  *
- * Intended usage:
- * - MAX_PER_RUN=15 node src/run-batch.js
- * - schedule every 15 minutes (cron / launchd / etc.)
+ * Schedule (UTC calendar day, see src/batch-schedule.js):
+ * - First successful run each day: live product + category sitemap fetch, write caches,
+ *   full category + brand sync, FULL_SCRAPE + FULL_SYNC.
+ * - Later runs same day: cached sitemaps, skip category/brand sync, incremental scrape + product sync.
  *
- * Notes:
- * - Scrape advances sitemap state only for successfully scraped URLs (incremental mode).
- * - Sync uses the same MAX_PER_RUN cap and skips existing Woo products via wc-product-map.json.
- * - A lock file prevents two batches from running at once (duplicate log lines).
+ * Env: MAX_PER_RUN (e.g. 15), DAILY_FULL_SYNC / FORCE_INCREMENTAL_SYNC overrides.
+ * Lock file prevents overlapping cron + manual runs.
  */
 async function main() {
   await acquireLock();
+  const { isFullDay, today } = await applyBatchScheduleEnv();
+  let ok = false;
   try {
     await scrapeMain();
     await syncMain();
+    ok = true;
   } finally {
+    if (ok && isFullDay) {
+      await markFullRunCompletedIfApplicable(isFullDay, today);
+    }
     await releaseLock();
   }
 }
