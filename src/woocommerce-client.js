@@ -39,7 +39,6 @@ export function createWooClientFromEnv() {
   }
 
   const api = axios.create({
-    baseURL: `${baseUrl}/wp-json/wc/v3`,
     timeout: TIMEOUT_MS,
     auth: {
       username: consumerKey,
@@ -55,9 +54,9 @@ export function createWooClientFromEnv() {
       try {
         const response = await api.request({
           method,
-          url: path,
-          data,
+          url: `${baseUrl}/wp-json/wc/v3${path}`,
           params,
+          data,
         });
         return response.data;
       } catch (error) {

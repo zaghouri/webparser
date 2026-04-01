@@ -126,8 +126,9 @@ function pickUniqueSlug(baseSlug, usedSlugs) {
 }
 
 async function createProductPost(client, payload, productUrl) {
+  const post = (body) => client.post("/products", body);
   try {
-    return await client.post("/products", payload);
+    return await post(payload);
   } catch (error) {
     const status = error?.response?.status;
     const msg = `${error?.response?.data?.message ?? error?.message ?? ""}`;
@@ -137,10 +138,28 @@ async function createProductPost(client, payload, productUrl) {
       productUrl
     ) {
       const alt = `${payload.slug}-${shortSlugDisambiguator(productUrl)}`;
-      return await client.post("/products", { ...payload, slug: alt });
+      return await post({ ...payload, slug: alt });
+    }
+    if (
+      payload.brands &&
+      payload.brands.length > 0 &&
+      (status === 400 || status === 404)
+    ) {
+      const { brands, ...rest } = payload;
+      return await post(rest);
     }
     throw error;
   }
+}
+
+function formatProductSyncError(error) {
+  const status = error?.response?.status;
+  const wooMsg = error?.response?.data?.message;
+  const reqUrl = error?.config?.url;
+  const base = wooMsg ?? error?.message ?? String(error);
+  if (status && reqUrl) return `${base} (HTTP ${status} ${reqUrl})`;
+  if (status) return `${base} (HTTP ${status})`;
+  return base;
 }
 
 async function findCategoryIdBySlug(client, slug, categoryIdCache) {
@@ -332,11 +351,19 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
         continue;
       }
 
+      let wrote = false;
       if (wooId > 0) {
-        await client.put(`/products/${wooId}`, payloadWithBrands);
-        productMap[product.url] = wooId;
-        counters.updated++;
-      } else {
+        try {
+          await client.put(`/products/${wooId}`, payloadWithBrands);
+          productMap[product.url] = wooId;
+          counters.updated++;
+          wrote = true;
+        } catch (putError) {
+          if (putError?.response?.status !== 404) throw putError;
+          delete productMap[product.url];
+        }
+      }
+      if (!wrote) {
         const created = await createProductPost(
           client,
           payloadWithBrands,
@@ -354,10 +381,7 @@ export async function syncProducts({ categoryMap = {}, brandMap = {} } = {}) {
     } catch (error) {
       counters.failed++;
       const label = defaultProductSlug(product) || product.url;
-      console.error(
-        `[fail] product ${label}:`,
-        error?.response?.data?.message ?? error?.message ?? error
-      );
+      console.error(`[fail] product ${label}:`, formatProductSyncError(error));
     }
   }
 
